@@ -26,5 +26,11 @@ Uma tarefa só vai para **Concluído** quando:
 ## Notebooks
 - Parta de `notebooks/_template_etapa.ipynb` (cabeçalho, setup, diagnóstico antes/depois, salvar, resumo).
 - Instale as dependências com `pip install -r requirements.txt`.
-- Cada etapa lê o `.parquet` da etapa anterior e grava o seu em `data/intermediarios/` (ignorado pelo Git).
+- Cada etapa lê o `.parquet` da etapa anterior e grava o seu em `data/intermediarios/`. A pasta é criada automaticamente na primeira execução, e os `.parquet` dentro dela não vão para o Git.
 - Durante o sprint 2 todos leem `01_bruto.parquet`. Na execução final, troque só a variável `ENTRADA`.
+
+## Notebook final
+- A entrega é **um único notebook: `notebooks/ETL.ipynb`**.
+- Os notebooks por etapa (`notebooks/etl/` e `notebooks/exploracao/`) são arquivos de trabalho. Na ETL-26 o script `scripts/montar_notebook_etl.py` os junta e **sobrescreve** o `notebooks/ETL.ipynb`.
+- Antes da entrega, um PR de limpeza remove todos os outros `.ipynb`, incluindo o `_template_etapa.ipynb`. Antes dele, crie a tag `etl-notebooks-por-etapa`.
+- Até a ETL-26, **ninguém edita o `notebooks/ETL.ipynb` atual** (o código de leitura dele serve de base para a ETL-05).
