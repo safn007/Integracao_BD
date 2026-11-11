@@ -11,5 +11,5 @@ Projeto da disciplina de Banco de Dados. O objetivo é integrar bases de dados d
 ## Dados
 - Tema: Pessoas Envolvidas em Sinistros em São Paulo
 - Período: 2021 a 2023, com 1 arquivo CSV por mês (36 arquivos)
-- Local no repositório: `notebooks/data/`
+- Local no repositório: `data/`
 - Formato: CSV separado por `;`, encoding `latin-1`
