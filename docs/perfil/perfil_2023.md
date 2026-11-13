@@ -13,7 +13,7 @@
 | Pessoas por sinistro: mediana | 2,00 |
 | Pessoas por sinistro: máximo | 45 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** A base de 2023 tem 279.963 linhas e 142.130 sinistros distintos, com média de 1,97 pessoas por sinistro (mediana 2, máximo 45). As 32 colunas são as 31 da fonte mais `arquivo_origem`, criada para identificar o mês de cada linha.
 
 ## 2. Qual o % de nulos de cada coluna?
 
@@ -52,7 +52,7 @@
 | tempo_sinistro_obito | 274.473 | 98,04 |
 | arquivo_origem | 0 | 0,00 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** A maioria das colunas não tem nulos. As exceções são `grau_de_instrucao` (78,91%), `id_veiculo` (21,77%), `tipo_veiculo_vitima` (21,73%), `modo_transporte_vitima` (21,29%), `nacionalidade` (13,13%), `profissao` (12,20%), `local_via` (1,38%) e `idade` (0,40%). As 7 colunas de óbito têm 274.473 nulos cada (98,04%), nas mesmas linhas, porque só quem morreu tem data, local e tempo de óbito.
 
 ## 3. Quais os domínios (valores e contagens) de gravidade_lesao, tipo_de_vitima, sexo, tipo_via, tipo_veiculo_vitima e regiao_administrativa?
 
@@ -125,7 +125,7 @@
 | ITAPEVA | 2.964 | 1,06 |
 | REGISTRO | 1.808 | 0,65 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** `gravidade_lesao` tem 5 valores (LEVE 43,76%, ILESO 39,37%, NAO DISPONIVEL 9,91%, GRAVE 5,00%, FATAL 1,96%). `tipo_de_vitima` tem 4 (CONDUTOR 46,06%, PASSAGEIRO 33,32%, NAO DISPONIVEL 15,07%, PEDESTRE 5,55%). `sexo` tem 3 (MASCULINO 71,52%, FEMININO 28,27%, NAO DISPONIVEL 0,21%). `tipo_via` tem 3 (VIAS URBANAS 83,14%, ESTRADAS E RODOVIAS 16,75%, NAO DISPONIVEL 0,11%). `tipo_veiculo_vitima` tem 7 valores mais nulo (AUTOMOVEL 38,27%, MOTOCICLETA 33,96%, nulo 21,73%). `regiao_administrativa` tem 16 regiões, lideradas pela Metropolitana de São Paulo (37,68%) e por Campinas (15,87%). "NAO DISPONIVEL" aparece em várias colunas e é um nulo disfarçado de texto.
 
 ## 4. Há valores com caractere inválido/acento corrompido ou com espaço sobrando?
 
@@ -183,7 +183,7 @@ Detalhe (as 40 primeiras de 75):
 | nacionalidade | `'CANADENSE           '` | 4 | espaco_nas_pontas |
 | nacionalidade | `'EGÍPCIO             '` | 4 | espaco_nas_pontas |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** Não há caractere inválido nem acento quebrado (PORTUGUÊS, CHINÊS e outros estão corretos). O problema encontrado é espaço sobrando: os 74 valores distintos de `nacionalidade` têm espaços no fim (243.207 linhas, ex.: "BRASILEIRA" com espaços), o que exige `strip` na limpeza. O valor suspeito de `profissao` ("Tecnico em raio x") é provável falso positivo. Além disso, a verificação do notebook achou 8 municípios com o apóstrofo trocado por espaço (ex.: SANTA BARBARA D OESTE), listados em `corrompidos_2023.csv`.
 
 ## 5. Qual o % de grau_de_instrucao preenchido em cada mês?
 
@@ -202,7 +202,7 @@ Detalhe (as 40 primeiras de 75):
 | 2023-11 | 22.644 | 4.843 | 21,39 |
 | 2023-12 | 24.156 | 5.219 | 21,61 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** `grau_de_instrucao` é preenchido em cerca de 20% a 23% das linhas em todos os meses (mínimo 19,83% em outubro, máximo 22,74% em abril). Nenhum mês é muito diferente dos outros, então o nulo não vem de um mês faltando, e sim da fonte como um todo.
 
 ## 6. Quantos óbitos há e qual o % do total? As colunas de óbito são nulas nas mesmas linhas?
 
@@ -215,7 +215,7 @@ Detalhe (as 40 primeiras de 75):
 | Nulas nas mesmas linhas? | sim |
 | Linhas com óbito parcial (inconsistentes) | 0 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** Há 5.490 óbitos (1,96% do total), o mesmo número de linhas com gravidade FATAL. As 7 colunas de óbito são nulas nas mesmas linhas e não há óbito parcial (0 linhas inconsistentes).
 
 ## 7. Há id_pessoa repetido? E linhas 100% idênticas?
 
@@ -227,7 +227,7 @@ Detalhe (as 40 primeiras de 75):
 | Linhas excedentes por id_pessoa | 0 |
 | Linhas 100% idênticas (excedentes, sem as colunas de rastreio) | 0 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** Não. `id_pessoa` é único (0 repetidos e 0 nulos) e não há linhas 100% idênticas.
 
 ## 8. Há linhas cujo mês de data_sinistro difere do mês do arquivo de origem?
 
@@ -240,7 +240,7 @@ Detalhe (as 40 primeiras de 75):
 | data_sinistro preenchida mas inválida | 0 |
 | arquivo_origem fora do padrão pessoas_MM-AAAA | 0 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** Não. Nas 279.963 linhas, nenhuma (0,00%) tem o mês de `data_sinistro` diferente do mês do arquivo. Não há datas nulas nem inválidas, e todos os arquivos seguem o padrão `pessoas_MM-AAAA`.
 
 ## 9. Quais o mínimo, o máximo e os valores impossíveis de idade?
 
@@ -253,7 +253,7 @@ Detalhe (as 40 primeiras de 75):
 | Nulas | 1.117 |
 | Preenchidas mas não numéricas | 0 |
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** A idade mínima é 0 e a máxima é 100. Nenhum valor fica fora de 0 a 110 e nenhum é não numérico. Há 1.117 idades nulas (0,40%).
 
 ## 10. Há algo novo ou estranho (colunas novas ou ausentes, colunas constantes ou 100% nulas)?
 
@@ -263,7 +263,7 @@ Detalhe (as 40 primeiras de 75):
 - Colunas com um único valor: `ano_sinistro` (em um perfil de um ano ou de um mês, as colunas de ano e de mês são constantes: é esperado)
 - Colunas 100% nulas: nenhuma
 
-**Resposta:** _escreva aqui o que os números mostram._
+**Resposta:** Nada novo ou estranho. Não faltam colunas, não há colunas novas, a ordem é a mesma da fonte e nenhuma coluna é 100% nula. A única coluna constante é `ano_sinistro` (2023), o que é esperado em um perfil de um ano só.
 
 ## Anexo A. Linhas por mês de data_sinistro
 
