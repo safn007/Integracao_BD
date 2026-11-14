@@ -1,4 +1,4 @@
-## Perfil dos dados de 2022 (ETL-08)
+## Perfil dos dados de 2021 (ETL-07)
 
 **O que foi feito:** perfil dos dados de 2021 (12 arquivos mensais `pessoas_*-2021.csv`), usando a função `perfil()`. Nenhum dado foi alterado; só foram feitos diagnósticos.
 
