@@ -1,11 +1,10 @@
 # Dicionário de Dados da Fonte — Pessoas Envolvidas em Sinistros (2021–2023)
 
-> **Tarefa:** ETL-11 · **Responsável:** Guilherme · **Revisor:** Davi
 > Documento de referência da base bruta antes das transformações do pipeline ETL (alimenta a Seção 1 do relatório final e serve de base para o dicionário do Data Warehouse na ETL-18).
 
 ## 1. Visão Geral da Fonte
 
-| Característica | Valor observado nos 36 CSVs |
+| Característica | Valor observado na base de dados |
 |---|---|
 | **Base / Origem** | Pessoas Envolvidas em Sinistros — Dados Abertos SP (`dadosabertos.sp.gov.br` / Infosiga-SP) |
 | **Abrangência** | Estado de São Paulo inteiro (645 municípios, 16 regiões administrativas) |
@@ -14,7 +13,7 @@
 | **Formato e encoding** | Separador `;`, codificação `latin-1`, datas `dd/mm/aaaa`, nulos como campo vazio (`""`) |
 | **Volume total** | **806.977 linhas** (2021: `260.886`; 2022: `266.128`; 2023: `279.963`) |
 | **Sinistros distintos** | **402.695** (`id_sinistro` distintos; `id_pessoa` único em 100% das 806.977 linhas) |
-| **Colunas** | **31 colunas originais** (mesmo nome e ordem nos 36 arquivos) + **2 colunas de rastreio** da extração (`ETL-05`) |
+| **Colunas** | **31 colunas originais** (mesmo nome em todos os arquivos) + **2 colunas de rastreio** da extração (`ETL-05`) |
 
 ---
 
@@ -82,7 +81,7 @@
 
 ---
 
-## 4. Principais Achados de Qualidade na Fonte (para as próximas etapas)
+## 4. Principais Achados de Qualidade na Fonte
 
 1. **Unicidade e chave primária natural:** `id_pessoa` não possui nulos nem repetições em nenhuma das `806.977` linhas de 2021–2023. Cada `id_sinistro` agrega em média `2,00` pessoas (`402.695` sinistros).
 2. **Bloco de óbito consistente:** As 7 colunas ligadas ao óbito (`data_obito`, `ano_obito`, `mes_obito`, `dia_obito`, `ano_mes_obito`, `local_obito`, `tempo_sinistro_obito`) são nulas exatamente nas mesmas `791.184` linhas (`98,04%`), com `0` linhas parcialmente preenchidas. Os `15.793` registros preenchidos (`1,96%`) correspondem aos óbitos ocorridos em até 30 dias (`tempo_sinistro_obito` entre `0` e `30`).
