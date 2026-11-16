@@ -13,4 +13,6 @@
 - Idades: nenhuma inválida (mínimo 0 e máximo 102, 99 e 100 por ano). 8.389 idades nulas (1,04%) foram mantidas como nulo.
 - `idade`, `id_veiculo`, `ano_obito`, `mes_obito` e `dia_obito` passaram de decimal para inteiro (`Int64`, que aceita nulo).
 
+**Nulos disfarçados:** o texto "NAO DISPONIVEL" aparecia em 9 colunas (`tipo_via`, `tipo_veiculo_vitima`, `tipo_de_vitima`, `modo_transporte_vitima`, `sexo`, `faixa_etaria_demografica`, `faixa_etaria_legal`, `local_obito` e `local_via`) e passou a ser `NÃO INFORMADO`, igual aos outros nulos. `gravidade_lesao` ficou como está, para a ETL-19.D
+
 **O que continua nulo, de propósito:** `id_veiculo` (21,04%, identificador numérico), `idade` (1,04%) e as colunas de data e tempo de óbito (98,04%, quem não morreu).
