@@ -15,7 +15,7 @@
   - As etapas de dimensões (`07a`, `07b`, `07c`, `07d`) e a montagem da tabela fato (`08_fato`) passaram a apontar todas as suas fontes para `06_limpo.parquet`.
 
 **Resultados da execução do zero:**
-- **Execução sem erros:** todas as **266 células** executaram em sequência com **0 erros** (tempo total: **270,0 s**).
+- **Execução sem erros:** todas as **266 células** executaram em sequência com **0 erros** e **0 avisos** (tempo total: **220,9 s**).
 - **Integridade na camada limpa (`06_limpo.parquet`):** `806.977` linhas preservadas (`260.886` em 2021, `266.128` em 2022 e `279.963` em 2023), `402.695` sinistros distintos e `15.793` óbitos.
 - **Dimensões, fato e carga no PostgreSQL (Supabase):** recriação idempotente via [`sql/ddl/etl_star_schema.sql`](../../../sql/ddl/etl_star_schema.sql) e carga via `COPY` com conferência linha a linha:
   - `dim_tempo`: `1.121` linhas (`01/01/2021` a `24/01/2024` + membros `-1` e `-2`)

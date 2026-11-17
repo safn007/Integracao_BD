@@ -7,11 +7,13 @@ Uso:
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 from typing import Callable
 
 import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
+from nbformat.validator import MissingIDFieldWarning
 
 RAIZ = Path(__file__).resolve().parent.parent
 DIR_ETAPAS = RAIZ / "notebooks" / "etl"
@@ -140,16 +142,34 @@ def substituir_exato(texto: str, antigo: str, novo: str, contexto: str) -> str:
 
 
 def _patch_03(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entrada:** `data/intermediarios/01_bruto.parquet` *(na execução final, usar a saída da etapa `02_chaves_duplicatas`)*",
+        "- **Entrada:** `data/intermediarios/02_chaves_duplicatas.parquet`",
+        "03_texto_encoding/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'ENTRADA = INTERM / "01_bruto.parquet"       # na execução final, trocar para 02_chaves.parquet',
         'ENTRADA = INTERM / "02_chaves_duplicatas.parquet"',
         "03_texto_encoding/setup",
     )
+    celulas[11] = substituir_exato(
+        celulas[11],
+        'comparacao = antes.join(depois, lsuffix="_antes", rsuffix="_depois")',
+        'comparacao = antes.join(depois, suffixes=("_antes", "_depois"))',
+        "03_texto_encoding/diagnostico_depois",
+    )
     return celulas
 
 
 def _patch_04(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entrada:** `intermediarios/01_bruto.parquet`",
+        "- **Entrada:** `data/intermediarios/03_texto.parquet`",
+        "04_datas/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'ENTRADA = INTERM / "01_bruto.parquet"',
@@ -160,6 +180,12 @@ def _patch_04(celulas: list[str]) -> list[str]:
 
 
 def _patch_05(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entrada:** `data/pessoas_*.csv`\n- **Saída:** `intermediarios/<arquivo>.parquet`",
+        "- **Entrada:** `data/intermediarios/04_datas.parquet`\n- **Saída:** `data/intermediarios/05_nulos_categorias.parquet`",
+        "05_nulos_categorias/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'SAIDA = INTERM / "05_nulos_categorias.parquet"  # resultado desta etapa',
@@ -201,6 +227,12 @@ def _patch_05(celulas: list[str]) -> list[str]:
 
 
 def _patch_06(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entrada:** `data/intermediarios/03_texto.parquet`",
+        "- **Entrada:** `data/intermediarios/05_nulos_categorias.parquet`",
+        "06_profissao/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'ENTRADA = INTERM / "03_texto.parquet"          # saída da ETL-14',
@@ -218,6 +250,12 @@ def _patch_06(celulas: list[str]) -> list[str]:
 
 
 def _patch_07a(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entradas:** `data/intermediarios/04_datas.parquet` (datas convertidas, ETL-15) e `data/intermediarios/05_nulos_categorias.parquet` (`gravidade_lesao`, ETL-16)",
+        "- **Entrada:** `data/intermediarios/06_limpo.parquet`",
+        "07a_dim_tempo_gravidade/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'ENTRADA_DATAS     = INTERM / "04_datas.parquet"             # saída da ETL-15: datas já convertidas\n'
@@ -230,6 +268,12 @@ def _patch_07a(celulas: list[str]) -> list[str]:
 
 
 def _patch_07b(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entrada:** `data/intermediarios/05_nulos_categorias.parquet`",
+        "- **Entrada:** `data/intermediarios/06_limpo.parquet`",
+        "07b_dim_perfil_transporte/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'ENTRADA = INTERM / "05_nulos_categorias.parquet"   # saída da ETL-16',
@@ -240,6 +284,12 @@ def _patch_07b(celulas: list[str]) -> list[str]:
 
 
 def _patch_07c(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entradas:** `data/intermediarios/03_texto.parquet` (`dim_localidade`, saída da ETL-14) e `data/intermediarios/05_nulos_categorias.parquet` (`dim_via`, saída da ETL-16) *(na execução encadeada final, ambas apontam para `06_limpo.parquet`)*",
+        "- **Entrada:** `data/intermediarios/06_limpo.parquet`",
+        "07c_dim_localidade_via/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'ENTRADA_LOCALIDADE = INTERM / "03_texto.parquet"             # saída da ETL-14: municípios e regiões limpos\n'
@@ -252,6 +302,12 @@ def _patch_07c(celulas: list[str]) -> list[str]:
 
 
 def _patch_07d(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entradas:** `data/intermediarios/06_limpo.parquet` (profissão, ETL-17) e `data/intermediarios/05_nulos_categorias.parquet` (local do óbito, ETL-16)",
+        "- **Entrada:** `data/intermediarios/06_limpo.parquet`",
+        "07d_dim_profissao_local_obito/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         'ENTRADA_PROFISSAO = INTERM / "06_limpo.parquet"           # saída da ETL-17: profissao e grupo_profissao\n'
@@ -264,6 +320,12 @@ def _patch_07d(celulas: list[str]) -> list[str]:
 
 
 def _patch_08(celulas: list[str]) -> list[str]:
+    celulas[0] = substituir_exato(
+        celulas[0],
+        "- **Entradas:** a base limpa (saídas das ETL-13 a ETL-17 em `data/intermediarios/`) e as 8 dimensões em `data/intermediarios/dims/` (ETL-19 a ETL-22)",
+        "- **Entradas:** `data/intermediarios/06_limpo.parquet` e as 8 dimensões em `data/intermediarios/dims/` (ETL-19 a ETL-22)",
+        "08_fato/header",
+    )
     celulas[2] = substituir_exato(
         celulas[2],
         "FONTES = {\n"
@@ -341,7 +403,9 @@ def montar_notebook() -> nbformat.NotebookNode:
         if not caminho.is_file():
             raise FileNotFoundError(f"Notebook de etapa não encontrado: {caminho}")
 
-        nb_etapa = nbformat.read(caminho, as_version=4)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", MissingIDFieldWarning)
+            nb_etapa = nbformat.read(caminho, as_version=4)
         fontes = [c.source for c in nb_etapa.cells]
         if arquivo in PATCHES_POR_ETAPA:
             fontes = PATCHES_POR_ETAPA[arquivo](fontes)
@@ -364,6 +428,9 @@ def montar_notebook() -> nbformat.NotebookNode:
                 if codigo_limpo:
                     celulas_finais.append(new_code_cell(codigo_limpo))
 
+    for seq, celula in enumerate(celulas_finais):
+        celula["id"] = f"etl-{seq:03d}"
+
     notebook = new_notebook(cells=celulas_finais)
     notebook.metadata["kernelspec"] = {
         "display_name": "Python 3",
@@ -373,7 +440,6 @@ def montar_notebook() -> nbformat.NotebookNode:
     notebook.metadata["language_info"] = {
         "name": "python",
     }
-    _, notebook = nbformat.validator.normalize(notebook)
     return notebook
 
 
