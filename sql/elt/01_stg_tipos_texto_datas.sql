@@ -198,8 +198,8 @@ DECLARE
     v_colunas_stg          INT;
     v_cod_ibge_inconsist   BIGINT;
     v_mun_inconsist        BIGINT;
-    v_derivadas_diverg     BIGINT;
     v_datas_invalidas      BIGINT;
+    v_derivadas_diverg     BIGINT;
     v_sinistro_fora_per    BIGINT;
     v_dias_divergentes     BIGINT;
     v_espacos_restantes    BIGINT;
@@ -248,55 +248,38 @@ BEGIN
             v_cod_ibge_inconsist, v_mun_inconsist;
     END IF;
 
-    -- Datas preenchidas na origem que não converteram, ou datas fora do esperado
-    SELECT COUNT(*)
-      INTO v_datas_invalidas
-      FROM raw.pessoas AS r
-      JOIN stg.pessoas_tipos_texto_datas AS s
-        ON s.id_pessoa = NULLIF(BTRIM(r.id_pessoa), '')::INTEGER
-     WHERE (NULLIF(BTRIM(r.data_sinistro), '') IS NOT NULL AND s.data_sinistro IS NULL)
-        OR (NULLIF(BTRIM(r.data_obito), '')    IS NOT NULL AND s.data_obito    IS NULL);
-
-    SELECT COUNT(*)
-      INTO v_sinistro_fora_per
-      FROM stg.pessoas_tipos_texto_datas
-     WHERE data_sinistro < DATE '2021-01-01'
-        OR data_sinistro > DATE '2023-12-31'
-        OR dias_ate_obito < 0
-        OR dias_ate_obito > 30;
-
-    IF v_datas_invalidas > 0 OR v_sinistro_fora_per > 0 THEN
-        RAISE EXCEPTION 'Problemas em datas (inválidas=%, fora_periodo_ou_intervalo=%).',
-            v_datas_invalidas, v_sinistro_fora_per;
-    END IF;
-
-    -- Conferência das 8 colunas derivadas de data descartadas
-    SELECT COUNT(*)
-      INTO v_derivadas_diverg
-      FROM raw.pessoas AS r
-      JOIN stg.pessoas_tipos_texto_datas AS s
-        ON s.id_pessoa = NULLIF(BTRIM(r.id_pessoa), '')::INTEGER
-     WHERE NULLIF(BTRIM(r.ano_sinistro), '')::SMALLINT IS DISTINCT FROM EXTRACT(YEAR  FROM s.data_sinistro)::SMALLINT
-        OR NULLIF(BTRIM(r.mes_sinistro), '')::SMALLINT IS DISTINCT FROM EXTRACT(MONTH FROM s.data_sinistro)::SMALLINT
-        OR NULLIF(BTRIM(r.dia_sinistro), '')::SMALLINT IS DISTINCT FROM EXTRACT(DAY   FROM s.data_sinistro)::SMALLINT
-        OR NULLIF(BTRIM(r.ano_mes_sinistro), '')       IS DISTINCT FROM TO_CHAR(s.data_sinistro, 'YYYY/MM')
-        OR NULLIF(BTRIM(r.ano_obito), '')::SMALLINT    IS DISTINCT FROM EXTRACT(YEAR  FROM s.data_obito)::SMALLINT
-        OR NULLIF(BTRIM(r.mes_obito), '')::SMALLINT    IS DISTINCT FROM EXTRACT(MONTH FROM s.data_obito)::SMALLINT
-        OR NULLIF(BTRIM(r.dia_obito), '')::SMALLINT    IS DISTINCT FROM EXTRACT(DAY   FROM s.data_obito)::SMALLINT
-        OR NULLIF(BTRIM(r.ano_mes_obito), '')          IS DISTINCT FROM TO_CHAR(s.data_obito, 'YYYY/MM');
-
-    SELECT COUNT(*)
-      INTO v_dias_divergentes
-      FROM stg.pessoas_tipos_texto_datas
-     WHERE dias_ate_obito IS DISTINCT FROM tempo_sinistro_obito;
-
-    IF v_derivadas_diverg > 0 OR v_dias_divergentes > 0 THEN
-        RAISE EXCEPTION 'Divergência nas derivadas de data (derivadas=%, dias_ate_obito=%).',
-            v_derivadas_diverg, v_dias_divergentes;
-    END IF;
-
-    -- Conferência de espaços sobrando / duplos e caracteres inválidos nas 15 colunas de texto
+    -- Conferência em passada única entre raw e stg: datas inválidas e 8 derivadas descartadas
     SELECT
+        COUNT(*) FILTER (
+            WHERE (NULLIF(BTRIM(r.data_sinistro), '') IS NOT NULL AND s.data_sinistro IS NULL)
+               OR (NULLIF(BTRIM(r.data_obito), '')    IS NOT NULL AND s.data_obito    IS NULL)
+        ),
+        COUNT(*) FILTER (
+            WHERE NULLIF(BTRIM(r.ano_sinistro), '')::SMALLINT IS DISTINCT FROM EXTRACT(YEAR  FROM s.data_sinistro)::SMALLINT
+               OR NULLIF(BTRIM(r.mes_sinistro), '')::SMALLINT IS DISTINCT FROM EXTRACT(MONTH FROM s.data_sinistro)::SMALLINT
+               OR NULLIF(BTRIM(r.dia_sinistro), '')::SMALLINT IS DISTINCT FROM EXTRACT(DAY   FROM s.data_sinistro)::SMALLINT
+               OR NULLIF(BTRIM(r.ano_mes_sinistro), '')       IS DISTINCT FROM TO_CHAR(s.data_sinistro, 'YYYY/MM')
+               OR NULLIF(BTRIM(r.ano_obito), '')::SMALLINT    IS DISTINCT FROM EXTRACT(YEAR  FROM s.data_obito)::SMALLINT
+               OR NULLIF(BTRIM(r.mes_obito), '')::SMALLINT    IS DISTINCT FROM EXTRACT(MONTH FROM s.data_obito)::SMALLINT
+               OR NULLIF(BTRIM(r.dia_obito), '')::SMALLINT    IS DISTINCT FROM EXTRACT(DAY   FROM s.data_obito)::SMALLINT
+               OR NULLIF(BTRIM(r.ano_mes_obito), '')          IS DISTINCT FROM TO_CHAR(s.data_obito, 'YYYY/MM')
+        )
+      INTO v_datas_invalidas, v_derivadas_diverg
+      FROM raw.pessoas AS r
+      JOIN stg.pessoas_tipos_texto_datas AS s
+        ON s.id_pessoa = NULLIF(BTRIM(r.id_pessoa), '')::INTEGER;
+
+    -- Conferência em passada única sobre stg: período/intervalo de datas, dias_ate_obito e limpeza de texto
+    SELECT
+        COUNT(*) FILTER (
+            WHERE data_sinistro < DATE '2021-01-01'
+               OR data_sinistro > DATE '2023-12-31'
+               OR dias_ate_obito < 0
+               OR dias_ate_obito > 30
+        ),
+        COUNT(*) FILTER (
+            WHERE dias_ate_obito IS DISTINCT FROM tempo_sinistro_obito
+        ),
         COUNT(*) FILTER (
             WHERE EXISTS (
                 SELECT 1
@@ -311,20 +294,27 @@ BEGIN
             )
         ),
         COUNT(*) FILTER (
-            WHERE EXISTS (
-                SELECT 1
-                  FROM unnest(ARRAY[
-                      municipio, regiao_administrativa, tipo_via, tipo_veiculo_vitima,
-                      tipo_de_vitima, modo_transporte_vitima, sexo, gravidade_lesao,
-                      faixa_etaria_demografica, faixa_etaria_legal, profissao,
-                      grau_de_instrucao, nacionalidade, local_obito, local_via
-                  ]) AS v(txt)
-                 WHERE v.txt IS NOT NULL
-                   AND strpos(v.txt, chr(65533)) > 0
-            )
+            WHERE strpos(
+                municipio || regiao_administrativa || tipo_via || COALESCE(tipo_veiculo_vitima, '')
+                || tipo_de_vitima || COALESCE(modo_transporte_vitima, '') || sexo || gravidade_lesao
+                || faixa_etaria_demografica || faixa_etaria_legal || COALESCE(profissao, '')
+                || COALESCE(grau_de_instrucao, '') || COALESCE(nacionalidade, '')
+                || COALESCE(local_obito, '') || COALESCE(local_via, ''),
+                chr(65533)
+            ) > 0
         )
-      INTO v_espacos_restantes, v_chars_invalidos
+      INTO v_sinistro_fora_per, v_dias_divergentes, v_espacos_restantes, v_chars_invalidos
       FROM stg.pessoas_tipos_texto_datas;
+
+    IF v_datas_invalidas > 0 OR v_sinistro_fora_per > 0 THEN
+        RAISE EXCEPTION 'Problemas em datas (inválidas=%, fora_periodo_ou_intervalo=%).',
+            v_datas_invalidas, v_sinistro_fora_per;
+    END IF;
+
+    IF v_derivadas_diverg > 0 OR v_dias_divergentes > 0 THEN
+        RAISE EXCEPTION 'Divergência nas derivadas de data (derivadas=%, dias_ate_obito=%).',
+            v_derivadas_diverg, v_dias_divergentes;
+    END IF;
 
     IF v_espacos_restantes > 0 OR v_chars_invalidos > 0 THEN
         RAISE EXCEPTION 'Falha na limpeza de texto (espacos=%, chars_invalidos=%).',
