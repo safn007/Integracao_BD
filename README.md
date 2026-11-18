@@ -118,22 +118,6 @@ A ELT usa os mesmos 36 CSVs da ETL. O notebook [`notebooks/ELT.ipynb`](notebooks
 
 A validação cruzada fica em [`notebooks/elt/08_validacao.ipynb`](notebooks/elt/08_validacao.ipynb), depois de as estrelas dos dois fluxos estarem no mesmo banco. Ela lê `public` (ETL) e `dw_elt` (ELT) e gera [`sql/validacao/elt_checks.sql`](sql/validacao/elt_checks.sql). As saídas salvas registram contagens iguais nas nove tabelas e nenhum registro divergente nas colunas projetadas pelo `EXCEPT` por tabela.
 
-## Rodar no Google Colab
-
-Os notebooks rodam no Colab sem mudança de código: o `src/conexao.py` lê a `DATABASE_URL` dos **Secrets** do Colab.
-
-1. Em **Secrets** (ícone de chave, à esquerda), crie `DATABASE_URL` com a URI do PostgreSQL e ative **Acesso ao notebook**.
-2. Numa célula nova, no topo do notebook, rode:
-   ```python
-   !git clone https://github.com/safn007/Integracao_BD.git
-   %cd Integracao_BD
-   !pip install -q -r requirements.txt
-   ```
-   O clone traz os 36 CSVs de `data/` e a pasta `.git`, que os notebooks usam para achar a raiz do projeto.
-3. Se o `pip` atualizar o pandas, reinicie a sessão (**Ambiente de execução → Reiniciar sessão**), rode de novo só o `%cd Integracao_BD` e então execute o notebook (`notebooks/ETL.ipynb`, `notebooks/ELT.ipynb` ou `notebooks/analises.ipynb`).
-
-Os mesmos cuidados valem no Colab: a ETL e a ELT recriam as próprias tabelas, então a execução do zero deve ser feita num banco de teste ou combinada com a equipe.
-
 ## Análises
 
 O notebook [`notebooks/analises.ipynb`](notebooks/analises.ipynb) roda as consultas de [`sql/analises/analises.sql`](sql/analises/analises.sql) no Data Warehouse e gera os três gráficos em `docs/relatorio/img/`. Ele só faz `SELECT` e pode ser executado no banco compartilhado. A variável `ESQUEMA` escolhe a estrela da ETL (`public`) ou da ELT (`dw_elt`); o resultado é o mesmo. O texto das análises está na [seção 6 do relatório](docs/relatorio/relatorio.md#6-três-análises-e-insights).
