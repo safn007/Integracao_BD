@@ -1,3 +1,20 @@
+# Pessoas Envolvidas em Sinistros em São Paulo (2021 a 2023)
+
+**Relatório do Projeto de Integração · Banco de Dados 2026.2 · Centro de Informática (CIn/UFPE)**
+
+**Grupo 5:** Davi de Souza Mello (`@davi01mello`), Guilherme Calistrato (`@guicalistrato`), Pedro Wellington (`@PedroWellington`) e Samuel de Almeida (`@safn007`).
+
+**Resumo.** O grupo integrou 36 arquivos mensais (2021 a 2023, 806.977 pessoas envolvidas em 402.695 sinistros) num Data Warehouse em esquema estrela no PostgreSQL, com uma tabela fato e oito dimensões. O mesmo modelo foi construído duas vezes: por ETL, com a transformação em Python antes da carga, e por ELT, com a carga dos dados brutos e a transformação em SQL dentro do banco. As duas estrelas ficaram idênticas. Sobre esse DW, três análises mostram quem morre, onde e quando se morre no trânsito paulista.
+
+**Sumário**
+1. [Descrição da modelagem dimensional e dicionário de dados](#1-descrição-da-modelagem-dimensional-esquema-estrela-e-dicionário-de-dados)
+2. [Processo de integração, da coleta à carga](#2-processo-de-integração-da-coleta-à-carga)
+3. [Justificativa da escolha da base](#3-justificativa-da-escolha-da-base)
+4. [Transformações aplicadas](#4-transformações-aplicadas)
+5. [Comparativo ETL × ELT](#5-comparativo-etl--elt)
+6. [Três análises e insights](#6-três-análises-e-insights)
+7. [Reflexão sobre o aprendizado](#7-reflexão-sobre-o-aprendizado)
+
 # 1. Descrição da Modelagem Dimensional (Esquema Estrela) e Dicionário de Dados
 
 ![Modelo estrela](../modelagem/modelo_estrela.png)
@@ -334,6 +351,31 @@ O [diagrama editável](../diagramas/fluxo_etl.drawio) e a [versão em PNG](../di
 
 As saídas salvas em [`notebooks/ETL.ipynb`](../../notebooks/ETL.ipynb) registram 806.977 linhas na fato, 15.793 óbitos e zero chaves estrangeiras sem correspondência nas nove verificações. Os resultados são da [execução documentada na ETL-26](#notebook-etl-completo-rodado-do-zero-etl-26). A ETL-27 documenta o fluxo e não cria nem altera notebooks, dados de entrada ou scripts de carga.
 
+## O caminho da ELT: raw, stg e dw_elt (ELT-01 a ELT-09)
+
+A ELT parte dos mesmos 36 CSVs e chega ao mesmo modelo estrela, mas em outra ordem: **primeiro carrega, depois transforma**, tudo dentro do PostgreSQL. O banco ganhou três camadas, separadas da estrela da ETL em `public`. Cada etapa é um arquivo `.sql` em [`sql/elt/`](../../sql/elt/), executado por `src/rodar_sql.py` numa transação, com validações que cancelam a execução se algo divergir.
+
+![Fluxo da ELT](../diagramas/fluxo_elt.png)
+
+*Figura 3. Fluxo da ELT, dos CSVs à validação contra a ETL.*
+
+| Camada | Etapa | O que faz | Resultado |
+| --- | --- | --- | --- |
+| — | ELT-01 | Cria os schemas `raw`, `stg` e `dw_elt` e ativa a extensão `unaccent` | 3 schemas |
+| `raw` | ELT-02 | O próprio PostgreSQL lê os 36 CSVs com `COPY` (`latin-1`, `;`), tudo como texto, mais `ano_origem` e `arquivo_origem` | `raw.pessoas`: 806.977 linhas, 33 colunas |
+| `stg` | ELT-03 | Tipos, texto e datas (equivale às ETL-13 a ETL-15) | tabela `stg.pessoas_tipos_texto_datas`, 26 colunas |
+| `stg` | ELT-04 | Nulos, categorias e profissão (equivale às ETL-16 e ETL-17) | view `stg.pessoas_nulos_profissao`, 28 colunas |
+| `dw_elt` | ELT-05 e ELT-06 | As oito dimensões, com o DDL da ETL-18 e os membros -1 e -2 | 8 dimensões |
+| `dw_elt` | ELT-07 | A fato com `INSERT ... SELECT` e `JOIN` nas oito dimensões | 806.977 linhas, 15.793 óbitos |
+| — | ELT-08 | Validação cruzada com a estrela da ETL | 9 tabelas iguais |
+| — | ELT-09 | [`notebooks/ELT.ipynb`](../../notebooks/ELT.ipynb) roda tudo do zero, em ordem, com as saídas salvas | 336 s no Supabase |
+
+**Decisões próprias da ELT:**
+- **Carga sem tratamento.** A tabela `raw.pessoas` guarda os dados como vieram, inclusive os espaços de `nacionalidade` e os `NAO DISPONIVEL`. Assim a limpeza pode ser refeita sem reenviar os arquivos.
+- **Recarga segura.** A carga bruta recria a tabela numa transação só: rodar de novo não duplica e uma falha no meio não deixa carga pela metade.
+- **View na segunda limpeza.** A ELT-04 é uma view para não ocupar espaço: o banco já guardava a camada bruta, a primeira staging e a estrela da ETL.
+- **Profissão por grafia.** As regras de texto e de grupo da profissão rodam uma vez por grafia distinta (cerca de 815) e não linha a linha. Isso levou a ELT-04 de cerca de 2 minutos para segundos.
+
 # 3. Justificativa da escolha da base
 
 ## Fonte e justificativa da base (ETL-03)
@@ -434,6 +476,24 @@ As saídas salvas em [`notebooks/ETL.ipynb`](../../notebooks/ETL.ipynb) registra
 
 **Observação:** os grupos usam palavras-chave e podem ser refinados. Os grupos finais seguem a ordem das regras, e o primeiro que combina vale.
 
+## As mesmas transformações em SQL (ELT-03 e ELT-04)
+
+Na ELT, as regras acima foram reescritas em SQL e aplicadas dentro do banco. A tabela mostra a correspondência e as diferenças de implementação.
+
+| Transformação | Na ETL (Python) | Na ELT (SQL) |
+| --- | --- | --- |
+| Tipos e chaves | ETL-13: ids para inteiro, conferência de duplicatas | ELT-03: `CAST` com validação de que nenhum valor se perde |
+| Texto | ETL-14: leitura em `latin-1`, espaços de `nacionalidade`, apóstrofo dos 8 municípios | ELT-03: `TRIM` e substituição dos 8 nomes; o `COPY` já converte `latin-1` para UTF-8 |
+| Datas | ETL-15: conversão, `dias_ate_obito`, descarte das 8 colunas derivadas | ELT-03: `TO_DATE`, subtração de datas e descarte das mesmas colunas |
+| Nulos e categorias | ETL-16: `NAO DISPONIVEL` vira NÃO INFORMADO; veículo de pedestre vira NÃO SE APLICA | ELT-04: as mesmas regras com `CASE` |
+| Profissão | ETL-17: maiúsculas, sem acento, sem (A)/(O), grupos por palavra-chave | ELT-04: `unaccent`, `REGEXP_REPLACE` e `~`, na mesma ordem de grupos |
+| "Não informado" escrito como profissão | tratado na dimensão (ETL-22) | tratado já na staging (ELT-04) |
+| `NAO DISPONIVEL` na gravidade | tratado na dimensão (ETL-19) | tratado já na staging (ELT-04) |
+
+**Como sabemos que as regras são as mesmas:**
+- A view da ELT-04 foi comparada com a saída da ETL-17 e as 27 colunas bateram em 100% das 806.977 linhas, contando as duas regras que a ETL deixou para as dimensões.
+- As dimensões e a fato finais são idênticas nas duas abordagens (seção 5.3).
+
 # 5. Comparativo ETL × ELT
 
 As duas implementações partiram dos **36 CSVs mensais de 2021 a 2023** e produziram um modelo estrela com uma fato e oito dimensões. A diferença está na ordem e no local da transformação. A ETL transforma em **Python/pandas antes de carregar**. A ELT carrega os dados brutos e transforma em **SQL no PostgreSQL**.
@@ -478,7 +538,7 @@ O notebook da ELT ficou mais curto porque delega a transformação a arquivos SQ
 
 As saídas salvas na [ELT-08](../../notebooks/elt/08_validacao.ipynb) mostram que **as nove tabelas têm a mesma contagem** nos dois schemas, com **806.977 linhas na fato** e **15.793 óbitos**. As nove verificações de chaves estrangeiras da fato da ELT retornaram zero sem correspondência.
 
-O `EXCEPT` nos dois sentidos não encontrou diferenças nas **colunas comuns de conteúdo**, sem as chaves substitutas `sk_*`. Para a fato ligada às dimensões, o notebook usou a quantidade de linhas e uma soma de hashes, que coincidiram. Essa conferência complementa o `EXCEPT` por tabela e não afirma igualdade numérica das chaves substitutas. As consultas estão em [`sql/validacao/elt_checks.sql`](../../sql/validacao/elt_checks.sql).
+O `EXCEPT` nos dois sentidos não encontrou diferenças nas **colunas comuns de conteúdo**, sem as chaves substitutas `sk_*`. Para a fato ligada às dimensões, o notebook usou a quantidade de linhas e uma soma de hashes, que coincidiram. Essa conferência complementa o `EXCEPT` por tabela e não afirma igualdade numérica das chaves substitutas. Numa execução do zero dos dois pipelines num banco de teste, comparamos também as linhas inteiras, **incluindo as chaves `sk_*`**, com `EXCEPT ALL` nos dois sentidos: as nove tabelas ficaram idênticas, sem nenhuma linha a mais ou a menos de nenhum dos lados. As consultas estão em [`sql/validacao/elt_checks.sql`](../../sql/validacao/elt_checks.sql).
 
 ## 5.4 Vantagens e desvantagens neste projeto
 
@@ -486,3 +546,130 @@ O `EXCEPT` nos dois sentidos não encontrou diferenças nas **colunas comuns de 
 - **ELT.** Os dados brutos ficam disponíveis no banco para auditoria e para repetir a limpeza sem reenviar os CSVs, desde que `raw` seja preservado. Não há intermediários Parquet no fluxo, e o SQL concentra a transformação junto dos dados. Em contrapartida, a tabela bruta, a staging tipada, os índices e os arquivos temporários disputam recursos no servidor. O notebook da ELT-08 registra um caso concreto: o `EXCEPT` sobre a fato já ligada às dimensões excedeu o espaço em disco do Supabase e foi substituído pela conferência por soma de hashes.
 
 No recorte observado, **a ETL teve o menor tempo registrado e a ELT teve menos linhas de código no escopo contado**. As validações registradas sustentam a consistência do resultado para as análises do projeto. A escolha entre as abordagens envolve onde é mais conveniente concentrar processamento, armazenamento e diagnóstico, não apenas qual notebook é menor.
+
+# 6. Três análises e insights
+
+As três análises respondem a uma pergunta cada: **quem morre**, **onde se morre** e **quando se morre**. Todas são consultas SQL no Data Warehouse, cruzando a `fato_pessoa_sinistro` com as dimensões. A medida principal é a **letalidade**, a parte das pessoas envolvidas que morreu: `SUM(flag_obito) / SUM(qtd_pessoas)`. As consultas estão em [`sql/analises/analises.sql`](../../sql/analises/analises.sql) e os gráficos são gerados por [`notebooks/analises.ipynb`](../../notebooks/analises.ipynb). Como as estrelas da ETL e da ELT são idênticas, as consultas dão o mesmo resultado em `public` e em `dw_elt`.
+
+**Panorama.** De 2021 a 2023 foram 402.695 sinistros, 806.977 pessoas envolvidas e 15.793 óbitos, uma letalidade geral de 1,96%. Os sinistros cresceram 10,9% no período e os óbitos, 13%.
+
+| Ano | Sinistros | Pessoas | Óbitos | Letalidade |
+| --- | ---: | ---: | ---: | ---: |
+| 2021 | 128.207 | 260.886 | 4.858 | 1,86% |
+| 2022 | 132.358 | 266.128 | 5.445 | 2,05% |
+| 2023 | 142.130 | 279.963 | 5.490 | 1,96% |
+| **Total** | **402.695** | **806.977** | **15.793** | **1,96%** |
+
+## 6.1 Quem morre
+
+O pedestre é identificado por `tipo_de_vitima` (dimensão de transporte); os demais grupos, pelo veículo em que a vítima estava (`tipo_veiculo_vitima`).
+
+![Participação de cada grupo nas pessoas envolvidas e nos óbitos.](img/analise_1_quem_morre.png)
+
+| Grupo | Pessoas | Óbitos | Letalidade | % das pessoas | % dos óbitos |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Motocicleta | 274.658 | 6.357 | 2,31% | 34,0% | **40,3%** |
+| Automóvel | 315.274 | 3.725 | 1,18% | 39,1% | 23,6% |
+| Pedestre | 46.173 | 3.594 | **7,78%** | **5,7%** | 22,8% |
+| Caminhão | 22.332 | 597 | 2,67% | 2,8% | 3,8% |
+| Ônibus | 16.336 | 99 | 0,61% | 2,0% | 0,6% |
+
+**Insights**
+- **A moto é o maior problema.** Ela responde por 4 em cada 10 óbitos, com letalidade quase o dobro da do automóvel (2,31% contra 1,18%). As mortes de motociclistas cresceram **17,3%** de 2021 a 2023 (1.944 para 2.281), acima do crescimento total de 13%.
+- **O motociclista que morre é o condutor jovem.** 89,5% dos motociclistas mortos estavam pilotando e 89,1% eram homens. A idade mediana é 31 anos: 28,3% tinham de 18 a 24 anos e 56% de 18 a 34.
+- **O pedestre é o mais vulnerável.** É 5,7% das pessoas envolvidas e 22,8% dos óbitos, com letalidade de 7,78%. O risco sobe com a idade: a letalidade do pedestre é de 2,3% até 17 anos, 7,9% de 45 a 59, 11,5% de 60 a 79 e **17,6% com 80 anos ou mais**. Entre os mortos com 60 anos ou mais, **42,5% eram pedestres**.
+- **Homens são 83% dos óbitos**, com letalidade de 2,26%, quase o dobro da feminina (1,18%).
+
+## 6.2 Onde se morre
+
+![Letalidade em via urbana e em rodovia, para todos, motociclistas e pedestres.](img/analise_2_onde_se_morre.png)
+
+| Tipo de via | Pessoas | Óbitos | Letalidade | % das pessoas | % dos óbitos |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Vias urbanas | 672.411 | 7.982 | 1,19% | 83,3% | 50,5% |
+| Estradas e rodovias | 133.593 | 6.900 | **5,16%** | 16,6% | **43,7%** |
+
+**Insights**
+- **A rodovia é 4,3 vezes mais letal que a via urbana.** Ela concentra 16,6% das pessoas envolvidas e 43,7% dos óbitos.
+- **Atropelamento em rodovia é o cenário mais letal da base.** 38,4% dos pedestres envolvidos em sinistros em rodovia morrem, contra 4,6% na via urbana, oito vezes mais. Para o motociclista, a letalidade passa de 1,65% na cidade para 5,37% na rodovia.
+- **Na rodovia se morre na hora.** 61,5% dos óbitos em rodovia acontecem na própria via, contra 36,4% na via urbana, onde a maioria (59,1%) morre num estabelecimento de saúde. No total, **81,1% das mortes acontecem no mesmo dia do sinistro** e 94,2% em até uma semana: o atendimento nas primeiras horas é decisivo.
+- **As regiões com menos sinistros são as mais letais, por causa da rodovia.** Registro (5,14%) e Itapeva (3,56%) têm letalidade duas a três vezes maior que a Região Metropolitana de São Paulo (1,68%), que concentra 38% das pessoas envolvidas. Em Registro, 56% das pessoas envolvidas e **82% dos óbitos** são em rodovia; na Região Metropolitana, 11% e 25%. A capital tem letalidade de 1,35%, contra 2,14% no restante do estado.
+
+| Região | Letalidade | % das pessoas em rodovia | % dos óbitos em rodovia |
+| --- | ---: | ---: | ---: |
+| Registro | 5,14% | 56,4% | 82,2% |
+| Itapeva | 3,56% | 30,2% | 62,1% |
+| Campinas | 2,42% | 24,2% | 52,8% |
+| Metropolitana de São Paulo | 1,68% | 10,9% | 25,1% |
+
+## 6.3 Quando se morre
+
+O dia é o da data do sinistro (`dim_tempo`). Feriado conta como feriado mesmo quando cai no fim de semana.
+
+![Letalidade por dia da semana, com a média dos feriados como referência.](img/analise_3_quando_se_morre.png)
+
+| Tipo de dia | Dias | Pessoas por dia | Óbitos por dia | Letalidade |
+| --- | ---: | ---: | ---: | ---: |
+| Dia útil | 760 | 730 | 12,2 | 1,67% |
+| Fim de semana | 308 | 763 | **19,6** | 2,57% |
+| Feriado nacional | 27 | **642** | 18,9 | **2,95%** |
+
+**Insights**
+- **O fim de semana mata mais.** Sábado e domingo têm 29,6% das pessoas envolvidas e **39,2% dos óbitos**.
+- **Domingo é o dia mais letal (2,86%).** Tem menos pessoas envolvidas que a sexta-feira, mas 34% mais óbitos, e letalidade 1,8 vez a da terça-feira (1,61%).
+- **Feriado tem menos sinistros, mas mais mortes.** Em um feriado há 12% menos pessoas envolvidas por dia que em um dia útil, e 55% mais óbitos por dia. O Natal é o feriado mais letal (4,84%), quase o triplo de um dia útil.
+- **No fim de semana a letalidade da moto dobra:** 3,64% contra 1,82% de segunda a sexta. Para o pedestre, sobe de 7,21% para 9,26%; na rodovia, de 4,72% para 6,08%.
+- **Por mês, o segundo semestre pesa mais.** Outubro tem o maior número de óbitos (1.500), e setembro, outubro e dezembro têm as maiores letalidades (2,10% a 2,15%).
+
+## 6.4 Insight transversal: mortos e sobreviventes são registrados de forma diferente
+
+O tratamento dos nulos revelou que a base junta registros preenchidos de formas diferentes para quem morreu e para quem sobreviveu.
+
+| Campo não informado | Entre os mortos | Entre os sobreviventes |
+| --- | ---: | ---: |
+| Escolaridade | **100%** | 77,9% |
+| Profissão | **55,7%** | 9,9% |
+| Idade | 6,3% | 0,9% |
+| Tipo de via | 5,8% | 0,0% |
+
+O mesmo efeito aparece em outros pontos da base:
+- **Bicicleta** tem letalidade de 92,7%, porque o ciclista quase só aparece na base quando morre (1.042 óbitos em 1.124 registros).
+- **`modo_transporte_vitima`** só registra PEDESTRE e BICICLETA para quem morreu.
+- **Tipo de via não informado** tem letalidade de 93,6%.
+
+**Consequências para as análises:**
+- Escolaridade e profissão não servem para medir risco.
+- Cruzamentos com campos não informados distorcem a letalidade.
+- O pedestre foi identificado por `tipo_de_vitima`, e não por `modo_transporte_vitima`.
+- Os campos ausentes viraram o membro especial -1 (NÃO INFORMADO) em vez de as linhas serem apagadas, o que preservou os 15.793 óbitos.
+
+Por isso também não usamos a letalidade de passageiro de moto: a base tem mais passageiros que condutores de moto, o que indica problema de registro. O número seguro é a participação dos condutores entre os mortos (89,5%).
+
+## 6.5 Síntese
+
+O risco de morrer no trânsito de São Paulo se concentra em **motociclistas jovens**, **pedestres idosos** e **rodovias**, e cresce **nos fins de semana e feriados**. O pior cenário combinado é o atropelamento em rodovia, com letalidade de 38,4%. Como 81% dos óbitos acontecem no mesmo dia, os resultados apontam para fiscalização nos fins de semana e feriados, proteção ao pedestre em rodovia e resposta rápida de socorro, sobretudo nas regiões do interior onde a rodovia domina.
+
+# 7. Reflexão sobre o aprendizado
+
+## 7.1 Desafios superados
+
+- **A "sujeira" que não era dos dados.** No início, os acentos pareciam corrompidos (`S O PAULO`, `M DIO`). O problema estava na leitura: os arquivos são `latin-1` e estavam sendo abertos como UTF-8. Lidos do jeito certo, os acentos estavam corretos. O problema real de texto era menor: espaços no fim de `nacionalidade` e o apóstrofo de 8 municípios trocado por espaço.
+- **Quatro pessoas, três anos, um mesmo diagnóstico.** Cada integrante fez o perfil de um ano. Para que os três perfis fossem comparáveis, criamos uma função única com as mesmas 10 perguntas (ETL-06). Foi assim que vimos que os mesmos problemas se repetiam nos três anos, e o comparativo entre anos (ETL-12) ficou direto.
+- **Dependências entre tarefas.** A extração (ETL-05) atrasou, e algumas etapas começaram lendo os CSVs direto, cada uma a seu modo. Na ELT, uma tarefa foi integrada antes da que ela usava, e a `main` ficou sem rodar por um tempo. Corrigimos com a montagem do notebook completo do zero (ETL-26 e ELT-09).
+- **Limites do banco gratuito.** A ELT guarda no mesmo banco os dados brutos, a staging e uma segunda estrela, perto de 700 MB num plano com cota de 500 MB. Isso nos levou a usar view na segunda limpeza e, na validação, a trocar um `EXCEPT` que estourou o disco do Supabase por uma soma de hashes.
+- **Desempenho em SQL.** A mesma regra de profissão que é instantânea no pandas levou minutos numa view do PostgreSQL. Aplicá-la uma vez por grafia distinta, e não linha a linha, resolveu.
+
+## 7.2 Lições aprendidas
+
+- **Nulo tem significado.** Separar "não informado" (-1) de "não se aplica" (-2) foi o que deu sentido ao modelo: o pedestre não tem veículo, e quem não morreu não tem data de óbito. Apagar essas linhas teria sumido com óbitos.
+- **A qualidade dos dados é um resultado.** A descoberta de que mortos e sobreviventes são registrados de forma diferente (seção 6.4) veio do tratamento, não da análise. Ela mudou quais colunas podiam ser usadas para medir risco.
+- **Validar com números, em toda etapa.** Conferir em cada passo os mesmos totais (806.977 pessoas, 402.695 sinistros, 15.793 óbitos) e, no fim, comparar as duas estrelas linha a linha nos deu segurança de que nenhuma transformação perdeu dados.
+- **ETL e ELT chegam ao mesmo lugar por caminhos diferentes.** A ETL facilita investigar cada etapa nos intermediários; a ELT mantém o dado bruto no banco e concentra a transformação junto dos dados, mas cobra espaço e cuidado com desempenho.
+- **Processo também é entrega.** Uma branch por tarefa, revisão por outro integrante, commits descritivos e um quadro com dependências deixaram o trabalho de cada um rastreável. Os erros de processo (PR sem revisão, tarefa fechada sem entrega) apareceram cedo justamente por isso.
+
+## 7.3 O que cada integrante leva
+
+- **Davi de Souza Mello.** Trabalhou na função de diagnóstico (ETL-06), no modelo estrela (ETL-10), nas chaves e duplicatas (ETL-13), nas dimensões de tempo, gravidade, profissão e local do óbito (ETL-19 e ETL-22), na tabela fato (ETL-23), na carga bruta e nas etapas ELT-04 e ELT-05, e nas três análises (FIN-01). Leva a importância de definir o grão antes de qualquer tabela e de validar "ida e volta": ligar a fato às dimensões e recuperar exatamente a base limpa.
+- **Guilherme Calistrato.** Trabalhou na conexão com o PostgreSQL (ETL-02), no perfil de 2022 (ETL-08), no dicionário da fonte (ETL-11), em texto e encoding (ETL-14), no DDL e dicionário do DW (ETL-18), nas dimensões de localidade e via (ETL-21), no notebook ETL completo (ETL-26) e, na ELT, na primeira limpeza (ELT-03) e na tabela fato (ELT-07). Leva o cuidado com encoding e com as regras do banco (`CHECK`, chaves e tipos), e a experiência de reduzir o tempo de validação juntando as conferências numa passada só.
+- **Pedro Wellington.** Trabalhou na fonte e na extração (ETL-03 e ETL-05), no perfil de 2023 (ETL-09), nos nulos e categorias (ETL-16), na padronização de profissões (ETL-17), nas dimensões de perfil e transporte (ETL-20), na carga e na validação pós-carga (ETL-24 e ETL-25) e, na ELT, na validação cruzada (ELT-08) e no notebook ELT completo (ELT-09). Leva que nulo precisa de regra explícita e que uma validação precisa caber nos limites do ambiente, como na troca do `EXCEPT` pela soma de hashes.
+- **Samuel de Almeida.** Organizou o repositório e o quadro (ETL-01 e ETL-04), fez o perfil de 2021 (ETL-07), o comparativo entre anos (ETL-12), o tratamento de datas (ETL-15), o diagrama e o guia da ETL (ETL-27) e, na ELT, a preparação da fase (ELT-01), as dimensões B (ELT-06) e o comparativo ETL × ELT (ELT-10). Leva que organização e ordem das tarefas definem o ritmo do grupo, e que comparar os anos antes de transformar evita surpresas.
