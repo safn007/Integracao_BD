@@ -486,3 +486,105 @@ O `EXCEPT` nos dois sentidos não encontrou diferenças nas **colunas comuns de 
 - **ELT.** Os dados brutos ficam disponíveis no banco para auditoria e para repetir a limpeza sem reenviar os CSVs, desde que `raw` seja preservado. Não há intermediários Parquet no fluxo, e o SQL concentra a transformação junto dos dados. Em contrapartida, a tabela bruta, a staging tipada, os índices e os arquivos temporários disputam recursos no servidor. O notebook da ELT-08 registra um caso concreto: o `EXCEPT` sobre a fato já ligada às dimensões excedeu o espaço em disco do Supabase e foi substituído pela conferência por soma de hashes.
 
 No recorte observado, **a ETL teve o menor tempo registrado e a ELT teve menos linhas de código no escopo contado**. As validações registradas sustentam a consistência do resultado para as análises do projeto. A escolha entre as abordagens envolve onde é mais conveniente concentrar processamento, armazenamento e diagnóstico, não apenas qual notebook é menor.
+
+# 6. Três análises e insights
+
+As três análises respondem a uma pergunta cada: **quem morre**, **onde se morre** e **quando se morre**. Todas são consultas SQL no Data Warehouse, cruzando a `fato_pessoa_sinistro` com as dimensões. A medida principal é a **letalidade**, a parte das pessoas envolvidas que morreu: `SUM(flag_obito) / SUM(qtd_pessoas)`. As consultas estão em [`sql/analises/analises.sql`](../../sql/analises/analises.sql) e os gráficos são gerados por [`notebooks/analises.ipynb`](../../notebooks/analises.ipynb). Como as estrelas da ETL e da ELT são idênticas, as consultas dão o mesmo resultado em `public` e em `dw_elt`.
+
+**Panorama.** De 2021 a 2023 foram 402.695 sinistros, 806.977 pessoas envolvidas e 15.793 óbitos, uma letalidade geral de 1,96%. Os sinistros cresceram 10,9% no período e os óbitos, 13%.
+
+| Ano | Sinistros | Pessoas | Óbitos | Letalidade |
+| --- | ---: | ---: | ---: | ---: |
+| 2021 | 128.207 | 260.886 | 4.858 | 1,86% |
+| 2022 | 132.358 | 266.128 | 5.445 | 2,05% |
+| 2023 | 142.130 | 279.963 | 5.490 | 1,96% |
+| **Total** | **402.695** | **806.977** | **15.793** | **1,96%** |
+
+## 6.1 Quem morre
+
+O pedestre é identificado por `tipo_de_vitima` (dimensão de transporte); os demais grupos, pelo veículo em que a vítima estava (`tipo_veiculo_vitima`).
+
+![Participação de cada grupo nas pessoas envolvidas e nos óbitos.](img/analise_1_quem_morre.png)
+
+| Grupo | Pessoas | Óbitos | Letalidade | % das pessoas | % dos óbitos |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Motocicleta | 274.658 | 6.357 | 2,31% | 34,0% | **40,3%** |
+| Automóvel | 315.274 | 3.725 | 1,18% | 39,1% | 23,6% |
+| Pedestre | 46.173 | 3.594 | **7,78%** | **5,7%** | 22,8% |
+| Caminhão | 22.332 | 597 | 2,67% | 2,8% | 3,8% |
+| Ônibus | 16.336 | 99 | 0,61% | 2,0% | 0,6% |
+
+**Insights**
+- **A moto é o maior problema.** Ela responde por 4 em cada 10 óbitos, com letalidade quase o dobro da do automóvel (2,31% contra 1,18%). As mortes de motociclistas cresceram **17,3%** de 2021 a 2023 (1.944 para 2.281), acima do crescimento total de 13%.
+- **O motociclista que morre é o condutor jovem.** 89,5% dos motociclistas mortos estavam pilotando e 89,1% eram homens. A idade mediana é 31 anos: 28,3% tinham de 18 a 24 anos e 56% de 18 a 34.
+- **O pedestre é o mais vulnerável.** É 5,7% das pessoas envolvidas e 22,8% dos óbitos, com letalidade de 7,78%. O risco sobe com a idade: a letalidade do pedestre é de 2,3% até 17 anos, 7,9% de 45 a 59, 11,5% de 60 a 79 e **17,6% com 80 anos ou mais**. Entre os mortos com 60 anos ou mais, **42,5% eram pedestres**.
+- **Homens são 83% dos óbitos**, com letalidade de 2,26%, quase o dobro da feminina (1,18%).
+
+## 6.2 Onde se morre
+
+![Letalidade em via urbana e em rodovia, para todos, motociclistas e pedestres.](img/analise_2_onde_se_morre.png)
+
+| Tipo de via | Pessoas | Óbitos | Letalidade | % das pessoas | % dos óbitos |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Vias urbanas | 672.411 | 7.982 | 1,19% | 83,3% | 50,5% |
+| Estradas e rodovias | 133.593 | 6.900 | **5,16%** | 16,6% | **43,7%** |
+
+**Insights**
+- **A rodovia é 4,3 vezes mais letal que a via urbana.** Ela concentra 16,6% das pessoas envolvidas e 43,7% dos óbitos.
+- **Atropelamento em rodovia é o cenário mais letal da base.** 38,4% dos pedestres envolvidos em sinistros em rodovia morrem, contra 4,6% na via urbana, oito vezes mais. Para o motociclista, a letalidade passa de 1,65% na cidade para 5,37% na rodovia.
+- **Na rodovia se morre na hora.** 61,5% dos óbitos em rodovia acontecem na própria via, contra 36,4% na via urbana, onde a maioria (59,1%) morre num estabelecimento de saúde. No total, **81,1% das mortes acontecem no mesmo dia do sinistro** e 94,2% em até uma semana: o atendimento nas primeiras horas é decisivo.
+- **As regiões com menos sinistros são as mais letais, por causa da rodovia.** Registro (5,14%) e Itapeva (3,56%) têm letalidade duas a três vezes maior que a Região Metropolitana de São Paulo (1,68%), que concentra 38% das pessoas envolvidas. Em Registro, 56% das pessoas envolvidas e **82% dos óbitos** são em rodovia; na Região Metropolitana, 11% e 25%. A capital tem letalidade de 1,35%, contra 2,14% no restante do estado.
+
+| Região | Letalidade | % das pessoas em rodovia | % dos óbitos em rodovia |
+| --- | ---: | ---: | ---: |
+| Registro | 5,14% | 56,4% | 82,2% |
+| Itapeva | 3,56% | 30,2% | 62,1% |
+| Campinas | 2,42% | 24,2% | 52,8% |
+| Metropolitana de São Paulo | 1,68% | 10,9% | 25,1% |
+
+## 6.3 Quando se morre
+
+O dia é o da data do sinistro (`dim_tempo`). Feriado conta como feriado mesmo quando cai no fim de semana.
+
+![Letalidade por dia da semana, com a média dos feriados como referência.](img/analise_3_quando_se_morre.png)
+
+| Tipo de dia | Dias | Pessoas por dia | Óbitos por dia | Letalidade |
+| --- | ---: | ---: | ---: | ---: |
+| Dia útil | 760 | 730 | 12,2 | 1,67% |
+| Fim de semana | 308 | 763 | **19,6** | 2,57% |
+| Feriado nacional | 27 | **642** | 18,9 | **2,95%** |
+
+**Insights**
+- **O fim de semana mata mais.** Sábado e domingo têm 29,6% das pessoas envolvidas e **39,2% dos óbitos**.
+- **Domingo é o dia mais letal (2,86%).** Tem menos pessoas envolvidas que a sexta-feira, mas 34% mais óbitos, e letalidade 1,8 vez a da terça-feira (1,61%).
+- **Feriado tem menos sinistros, mas mais mortes.** Em um feriado há 12% menos pessoas envolvidas por dia que em um dia útil, e 55% mais óbitos por dia. O Natal é o feriado mais letal (4,84%), quase o triplo de um dia útil.
+- **No fim de semana a letalidade da moto dobra:** 3,64% contra 1,82% de segunda a sexta. Para o pedestre, sobe de 7,21% para 9,26%; na rodovia, de 4,72% para 6,08%.
+- **Por mês, o segundo semestre pesa mais.** Outubro tem o maior número de óbitos (1.500), e setembro, outubro e dezembro têm as maiores letalidades (2,10% a 2,15%).
+
+## 6.4 Insight transversal: mortos e sobreviventes são registrados de forma diferente
+
+O tratamento dos nulos revelou que a base junta registros preenchidos de formas diferentes para quem morreu e para quem sobreviveu.
+
+| Campo não informado | Entre os mortos | Entre os sobreviventes |
+| --- | ---: | ---: |
+| Escolaridade | **100%** | 77,9% |
+| Profissão | **55,7%** | 9,9% |
+| Idade | 6,3% | 0,9% |
+| Tipo de via | 5,8% | 0,0% |
+
+O mesmo efeito aparece em outros pontos da base:
+- **Bicicleta** tem letalidade de 92,7%, porque o ciclista quase só aparece na base quando morre (1.042 óbitos em 1.124 registros).
+- **`modo_transporte_vitima`** só registra PEDESTRE e BICICLETA para quem morreu.
+- **Tipo de via não informado** tem letalidade de 93,6%.
+
+**Consequências para as análises:**
+- Escolaridade e profissão não servem para medir risco.
+- Cruzamentos com campos não informados distorcem a letalidade.
+- O pedestre foi identificado por `tipo_de_vitima`, e não por `modo_transporte_vitima`.
+- Os campos ausentes viraram o membro especial -1 (NÃO INFORMADO) em vez de as linhas serem apagadas, o que preservou os 15.793 óbitos.
+
+Por isso também não usamos a letalidade de passageiro de moto: a base tem mais passageiros que condutores de moto, o que indica problema de registro. O número seguro é a participação dos condutores entre os mortos (89,5%).
+
+## 6.5 Síntese
+
+O risco de morrer no trânsito de São Paulo se concentra em **motociclistas jovens**, **pedestres idosos** e **rodovias**, e cresce **nos fins de semana e feriados**. O pior cenário combinado é o atropelamento em rodovia, com letalidade de 38,4%. Como 81% dos óbitos acontecem no mesmo dia, os resultados apontam para fiscalização nos fins de semana e feriados, proteção ao pedestre em rodovia e resposta rápida de socorro, sobretudo nas regiões do interior onde a rodovia domina.
