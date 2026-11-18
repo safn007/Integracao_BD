@@ -3,10 +3,22 @@
 Projeto da disciplina de Banco de Dados. O objetivo é integrar bases de dados de vítimas de sinistros de trânsito de 2021 a 2023, usando pipelines de ETL e ELT.
 
 ## Integrantes
-- Davi Mello <dsm5>
-- Guilherme Calistrato <gcnt>
-- Pedro Wellinton <pwffl>
-- Samuel de Almeida <safn>
+- Davi Mello <dsm5> · `@davi01mello`
+- Guilherme Calistrato <gcnt> · `@guicalistrato`
+- Pedro Wellington <pwffl> · `@PedroWellington`
+- Samuel de Almeida <safn> · `@safn007`
+
+## Entregáveis
+
+| Entregável | Onde está |
+| --- | --- |
+| Relatório (7 seções do template) | [`docs/relatorio/relatorio.md`](docs/relatorio/relatorio.md) |
+| Notebook ETL, com o resultado no banco | [`notebooks/ETL.ipynb`](notebooks/ETL.ipynb) |
+| Notebook ELT, com o resultado no banco | [`notebooks/ELT.ipynb`](notebooks/ELT.ipynb) e os scripts em [`sql/elt/`](sql/elt/) |
+| Modelo estrela e dicionários | [`docs/modelagem/modelo_estrela.md`](docs/modelagem/modelo_estrela.md), [`docs/dicionario/`](docs/dicionario/) e o DDL em [`sql/ddl/`](sql/ddl/) |
+| Diagramas dos fluxos (draw.io) | [`docs/diagramas/`](docs/diagramas/) |
+| Validações | [`sql/validacao/`](sql/validacao/) e [`notebooks/elt/08_validacao.ipynb`](notebooks/elt/08_validacao.ipynb) |
+| Três análises (consultas SQL e gráficos) | [`notebooks/analises.ipynb`](notebooks/analises.ipynb), [`sql/analises/analises.sql`](sql/analises/analises.sql) e a seção 6 do relatório |
 
 ## Dados
 - Tema: Pessoas Envolvidas em Sinistros em São Paulo
@@ -105,3 +117,44 @@ A ELT usa os mesmos 36 CSVs da ETL. O notebook [`notebooks/ELT.ipynb`](notebooks
 ### Comparar a ELT com a ETL
 
 A validação cruzada fica em [`notebooks/elt/08_validacao.ipynb`](notebooks/elt/08_validacao.ipynb), depois de as estrelas dos dois fluxos estarem no mesmo banco. Ela lê `public` (ETL) e `dw_elt` (ELT) e gera [`sql/validacao/elt_checks.sql`](sql/validacao/elt_checks.sql). As saídas salvas registram contagens iguais nas nove tabelas e nenhum registro divergente nas colunas projetadas pelo `EXCEPT` por tabela.
+
+## Rodar no Google Colab
+
+Os notebooks rodam no Colab sem mudança de código: o `src/conexao.py` lê a `DATABASE_URL` dos **Secrets** do Colab.
+
+1. Em **Secrets** (ícone de chave, à esquerda), crie `DATABASE_URL` com a URI do PostgreSQL e ative **Acesso ao notebook**.
+2. Numa célula nova, no topo do notebook, rode:
+   ```python
+   !git clone https://github.com/safn007/Integracao_BD.git
+   %cd Integracao_BD
+   !pip install -q -r requirements.txt
+   ```
+   O clone traz os 36 CSVs de `data/` e a pasta `.git`, que os notebooks usam para achar a raiz do projeto.
+3. Se o `pip` atualizar o pandas, reinicie a sessão (**Ambiente de execução → Reiniciar sessão**), rode de novo só o `%cd Integracao_BD` e então execute o notebook (`notebooks/ETL.ipynb`, `notebooks/ELT.ipynb` ou `notebooks/analises.ipynb`).
+
+Os mesmos cuidados valem no Colab: a ETL e a ELT recriam as próprias tabelas, então a execução do zero deve ser feita num banco de teste ou combinada com a equipe.
+
+## Análises
+
+O notebook [`notebooks/analises.ipynb`](notebooks/analises.ipynb) roda as consultas de [`sql/analises/analises.sql`](sql/analises/analises.sql) no Data Warehouse e gera os três gráficos em `docs/relatorio/img/`. Ele só faz `SELECT` e pode ser executado no banco compartilhado. A variável `ESQUEMA` escolhe a estrela da ETL (`public`) ou da ELT (`dw_elt`); o resultado é o mesmo. O texto das análises está na [seção 6 do relatório](docs/relatorio/relatorio.md#6-três-análises-e-insights).
+
+## Quem fez o quê na ELT e no fechamento
+
+| Integrante | Principais contribuições |
+| --- | --- |
+| Davi Mello (`@davi01mello`) | Carga bruta (ELT-02), nulos, categorias e profissão em SQL (ELT-04), dimensões A (ELT-05), três análises (FIN-01), relatório final e repositório (FIN-02 e FIN-04). |
+| Guilherme Calistrato (`@guicalistrato`) | Tipos, texto e datas em SQL (ELT-03) e tabela fato (ELT-07). |
+| Pedro Wellington (`@PedroWellington`) | Validação ELT × ETL (ELT-08) e notebook ELT completo (ELT-09). |
+| Samuel de Almeida (`@safn007`) | Preparação da fase ELT (ELT-01), dimensões B (ELT-06), comparativo ETL × ELT e diagrama da ELT (ELT-10) e slides (FIN-03). |
+
+## Estrutura do repositório
+
+| Pasta | Conteúdo |
+| --- | --- |
+| `data/` | Os 36 CSVs originais. `data/intermediarios/` (Parquets da ETL) é gerada pelo notebook e fica fora do Git. |
+| `notebooks/` | Os notebooks finais: `ETL.ipynb`, `ELT.ipynb` e `analises.ipynb`. |
+| `notebooks/etl/`, `notebooks/elt/` e `notebooks/exploracao/` | Os notebooks por etapa, com as saídas de cada tarefa. São o registro do trabalho individual e a fonte que `scripts/montar_notebook_*.py` usa para montar os notebooks finais. |
+| `sql/` | DDL da estrela (`ddl/`), scripts da ELT (`elt/`), validações (`validacao/`) e análises (`analises/`). |
+| `src/` | Conexão com o banco (`conexao.py`), execução de arquivos SQL (`rodar_sql.py`) e função de perfil (`perfil.py`). |
+| `docs/` | Relatório, modelagem, dicionários, diagramas, perfis dos anos, atas e evidências. |
+| `scripts/` | Montagem dos notebooks finais a partir dos notebooks por etapa. |
