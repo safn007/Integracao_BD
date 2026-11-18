@@ -1,3 +1,20 @@
+# Pessoas Envolvidas em Sinistros em São Paulo (2021 a 2023)
+
+**Relatório do Projeto de Integração · Banco de Dados 2026.2 · Centro de Informática (CIn/UFPE)**
+
+**Grupo 5:** Davi de Souza Mello (`@davi01mello`), Guilherme Calistrato (`@guicalistrato`), Pedro Wellington (`@PedroWellington`) e Samuel de Almeida (`@safn007`).
+
+**Resumo.** O grupo integrou 36 arquivos mensais (2021 a 2023, 806.977 pessoas envolvidas em 402.695 sinistros) num Data Warehouse em esquema estrela no PostgreSQL, com uma tabela fato e oito dimensões. O mesmo modelo foi construído duas vezes: por ETL, com a transformação em Python antes da carga, e por ELT, com a carga dos dados brutos e a transformação em SQL dentro do banco. As duas estrelas ficaram idênticas. Sobre esse DW, três análises mostram quem morre, onde e quando se morre no trânsito paulista.
+
+**Sumário**
+1. [Descrição da modelagem dimensional e dicionário de dados](#1-descrição-da-modelagem-dimensional-esquema-estrela-e-dicionário-de-dados)
+2. [Processo de integração, da coleta à carga](#2-processo-de-integração-da-coleta-à-carga)
+3. [Justificativa da escolha da base](#3-justificativa-da-escolha-da-base)
+4. [Transformações aplicadas](#4-transformações-aplicadas)
+5. [Comparativo ETL × ELT](#5-comparativo-etl--elt)
+6. [Três análises e insights](#6-três-análises-e-insights)
+7. [Reflexão sobre o aprendizado](#7-reflexão-sobre-o-aprendizado)
+
 # 1. Descrição da Modelagem Dimensional (Esquema Estrela) e Dicionário de Dados
 
 ![Modelo estrela](../modelagem/modelo_estrela.png)
@@ -334,6 +351,31 @@ O [diagrama editável](../diagramas/fluxo_etl.drawio) e a [versão em PNG](../di
 
 As saídas salvas em [`notebooks/ETL.ipynb`](../../notebooks/ETL.ipynb) registram 806.977 linhas na fato, 15.793 óbitos e zero chaves estrangeiras sem correspondência nas nove verificações. Os resultados são da [execução documentada na ETL-26](#notebook-etl-completo-rodado-do-zero-etl-26). A ETL-27 documenta o fluxo e não cria nem altera notebooks, dados de entrada ou scripts de carga.
 
+## O caminho da ELT: raw, stg e dw_elt (ELT-01 a ELT-09)
+
+A ELT parte dos mesmos 36 CSVs e chega ao mesmo modelo estrela, mas em outra ordem: **primeiro carrega, depois transforma**, tudo dentro do PostgreSQL. O banco ganhou três camadas, separadas da estrela da ETL em `public`. Cada etapa é um arquivo `.sql` em [`sql/elt/`](../../sql/elt/), executado por `src/rodar_sql.py` numa transação, com validações que cancelam a execução se algo divergir.
+
+![Fluxo da ELT](../diagramas/fluxo_elt.png)
+
+*Figura 3. Fluxo da ELT, dos CSVs à validação contra a ETL.*
+
+| Camada | Etapa | O que faz | Resultado |
+| --- | --- | --- | --- |
+| — | ELT-01 | Cria os schemas `raw`, `stg` e `dw_elt` e ativa a extensão `unaccent` | 3 schemas |
+| `raw` | ELT-02 | O próprio PostgreSQL lê os 36 CSVs com `COPY` (`latin-1`, `;`), tudo como texto, mais `ano_origem` e `arquivo_origem` | `raw.pessoas`: 806.977 linhas, 33 colunas |
+| `stg` | ELT-03 | Tipos, texto e datas (equivale às ETL-13 a ETL-15) | tabela `stg.pessoas_tipos_texto_datas`, 26 colunas |
+| `stg` | ELT-04 | Nulos, categorias e profissão (equivale às ETL-16 e ETL-17) | view `stg.pessoas_nulos_profissao`, 28 colunas |
+| `dw_elt` | ELT-05 e ELT-06 | As oito dimensões, com o DDL da ETL-18 e os membros -1 e -2 | 8 dimensões |
+| `dw_elt` | ELT-07 | A fato com `INSERT ... SELECT` e `JOIN` nas oito dimensões | 806.977 linhas, 15.793 óbitos |
+| — | ELT-08 | Validação cruzada com a estrela da ETL | 9 tabelas iguais |
+| — | ELT-09 | [`notebooks/ELT.ipynb`](../../notebooks/ELT.ipynb) roda tudo do zero, em ordem, com as saídas salvas | 336 s no Supabase |
+
+**Decisões próprias da ELT:**
+- **Carga sem tratamento.** A tabela `raw.pessoas` guarda os dados como vieram, inclusive os espaços de `nacionalidade` e os `NAO DISPONIVEL`. Assim a limpeza pode ser refeita sem reenviar os arquivos.
+- **Recarga segura.** A carga bruta recria a tabela numa transação só: rodar de novo não duplica e uma falha no meio não deixa carga pela metade.
+- **View na segunda limpeza.** A ELT-04 é uma view para não ocupar espaço: o banco já guardava a camada bruta, a primeira staging e a estrela da ETL.
+- **Profissão por grafia.** As regras de texto e de grupo da profissão rodam uma vez por grafia distinta (cerca de 815) e não linha a linha. Isso levou a ELT-04 de cerca de 2 minutos para segundos.
+
 # 3. Justificativa da escolha da base
 
 ## Fonte e justificativa da base (ETL-03)
@@ -434,6 +476,24 @@ As saídas salvas em [`notebooks/ETL.ipynb`](../../notebooks/ETL.ipynb) registra
 
 **Observação:** os grupos usam palavras-chave e podem ser refinados. Os grupos finais seguem a ordem das regras, e o primeiro que combina vale.
 
+## As mesmas transformações em SQL (ELT-03 e ELT-04)
+
+Na ELT, as regras acima foram reescritas em SQL e aplicadas dentro do banco. A tabela mostra a correspondência e as diferenças de implementação.
+
+| Transformação | Na ETL (Python) | Na ELT (SQL) |
+| --- | --- | --- |
+| Tipos e chaves | ETL-13: ids para inteiro, conferência de duplicatas | ELT-03: `CAST` com validação de que nenhum valor se perde |
+| Texto | ETL-14: leitura em `latin-1`, espaços de `nacionalidade`, apóstrofo dos 8 municípios | ELT-03: `TRIM` e substituição dos 8 nomes; o `COPY` já converte `latin-1` para UTF-8 |
+| Datas | ETL-15: conversão, `dias_ate_obito`, descarte das 8 colunas derivadas | ELT-03: `TO_DATE`, subtração de datas e descarte das mesmas colunas |
+| Nulos e categorias | ETL-16: `NAO DISPONIVEL` vira NÃO INFORMADO; veículo de pedestre vira NÃO SE APLICA | ELT-04: as mesmas regras com `CASE` |
+| Profissão | ETL-17: maiúsculas, sem acento, sem (A)/(O), grupos por palavra-chave | ELT-04: `unaccent`, `REGEXP_REPLACE` e `~`, na mesma ordem de grupos |
+| "Não informado" escrito como profissão | tratado na dimensão (ETL-22) | tratado já na staging (ELT-04) |
+| `NAO DISPONIVEL` na gravidade | tratado na dimensão (ETL-19) | tratado já na staging (ELT-04) |
+
+**Como sabemos que as regras são as mesmas:**
+- A view da ELT-04 foi comparada com a saída da ETL-17 e as 27 colunas bateram em 100% das 806.977 linhas, contando as duas regras que a ETL deixou para as dimensões.
+- As dimensões e a fato finais são idênticas nas duas abordagens (seção 5.3).
+
 # 5. Comparativo ETL × ELT
 
 As duas implementações partiram dos **36 CSVs mensais de 2021 a 2023** e produziram um modelo estrela com uma fato e oito dimensões. A diferença está na ordem e no local da transformação. A ETL transforma em **Python/pandas antes de carregar**. A ELT carrega os dados brutos e transforma em **SQL no PostgreSQL**.
@@ -478,7 +538,7 @@ O notebook da ELT ficou mais curto porque delega a transformação a arquivos SQ
 
 As saídas salvas na [ELT-08](../../notebooks/elt/08_validacao.ipynb) mostram que **as nove tabelas têm a mesma contagem** nos dois schemas, com **806.977 linhas na fato** e **15.793 óbitos**. As nove verificações de chaves estrangeiras da fato da ELT retornaram zero sem correspondência.
 
-O `EXCEPT` nos dois sentidos não encontrou diferenças nas **colunas comuns de conteúdo**, sem as chaves substitutas `sk_*`. Para a fato ligada às dimensões, o notebook usou a quantidade de linhas e uma soma de hashes, que coincidiram. Essa conferência complementa o `EXCEPT` por tabela e não afirma igualdade numérica das chaves substitutas. As consultas estão em [`sql/validacao/elt_checks.sql`](../../sql/validacao/elt_checks.sql).
+O `EXCEPT` nos dois sentidos não encontrou diferenças nas **colunas comuns de conteúdo**, sem as chaves substitutas `sk_*`. Para a fato ligada às dimensões, o notebook usou a quantidade de linhas e uma soma de hashes, que coincidiram. Essa conferência complementa o `EXCEPT` por tabela e não afirma igualdade numérica das chaves substitutas. Numa execução do zero dos dois pipelines num banco de teste, comparamos também as linhas inteiras, **incluindo as chaves `sk_*`**, com `EXCEPT ALL` nos dois sentidos: as nove tabelas ficaram idênticas, sem nenhuma linha a mais ou a menos de nenhum dos lados. As consultas estão em [`sql/validacao/elt_checks.sql`](../../sql/validacao/elt_checks.sql).
 
 ## 5.4 Vantagens e desvantagens neste projeto
 
@@ -588,3 +648,28 @@ Por isso também não usamos a letalidade de passageiro de moto: a base tem mais
 ## 6.5 Síntese
 
 O risco de morrer no trânsito de São Paulo se concentra em **motociclistas jovens**, **pedestres idosos** e **rodovias**, e cresce **nos fins de semana e feriados**. O pior cenário combinado é o atropelamento em rodovia, com letalidade de 38,4%. Como 81% dos óbitos acontecem no mesmo dia, os resultados apontam para fiscalização nos fins de semana e feriados, proteção ao pedestre em rodovia e resposta rápida de socorro, sobretudo nas regiões do interior onde a rodovia domina.
+
+# 7. Reflexão sobre o aprendizado
+
+## 7.1 Desafios superados
+
+- **A "sujeira" que não era dos dados.** No início, os acentos pareciam corrompidos (`S O PAULO`, `M DIO`). O problema estava na leitura: os arquivos são `latin-1` e estavam sendo abertos como UTF-8. Lidos do jeito certo, os acentos estavam corretos. O problema real de texto era menor: espaços no fim de `nacionalidade` e o apóstrofo de 8 municípios trocado por espaço.
+- **Quatro pessoas, três anos, um mesmo diagnóstico.** Cada integrante fez o perfil de um ano. Para que os três perfis fossem comparáveis, criamos uma função única com as mesmas 10 perguntas (ETL-06). Foi assim que vimos que os mesmos problemas se repetiam nos três anos, e o comparativo entre anos (ETL-12) ficou direto.
+- **Dependências entre tarefas.** A extração (ETL-05) atrasou, e algumas etapas começaram lendo os CSVs direto, cada uma a seu modo. Na ELT, uma tarefa foi integrada antes da que ela usava, e a `main` ficou sem rodar por um tempo. Corrigimos com a montagem do notebook completo do zero (ETL-26 e ELT-09).
+- **Limites do banco gratuito.** A ELT guarda no mesmo banco os dados brutos, a staging e uma segunda estrela, perto de 700 MB num plano com cota de 500 MB. Isso nos levou a usar view na segunda limpeza e, na validação, a trocar um `EXCEPT` que estourou o disco do Supabase por uma soma de hashes.
+- **Desempenho em SQL.** A mesma regra de profissão que é instantânea no pandas levou minutos numa view do PostgreSQL. Aplicá-la uma vez por grafia distinta, e não linha a linha, resolveu.
+
+## 7.2 Lições aprendidas
+
+- **Nulo tem significado.** Separar "não informado" (-1) de "não se aplica" (-2) foi o que deu sentido ao modelo: o pedestre não tem veículo, e quem não morreu não tem data de óbito. Apagar essas linhas teria sumido com óbitos.
+- **A qualidade dos dados é um resultado.** A descoberta de que mortos e sobreviventes são registrados de forma diferente (seção 6.4) veio do tratamento, não da análise. Ela mudou quais colunas podiam ser usadas para medir risco.
+- **Validar com números, em toda etapa.** Conferir em cada passo os mesmos totais (806.977 pessoas, 402.695 sinistros, 15.793 óbitos) e, no fim, comparar as duas estrelas linha a linha nos deu segurança de que nenhuma transformação perdeu dados.
+- **ETL e ELT chegam ao mesmo lugar por caminhos diferentes.** A ETL facilita investigar cada etapa nos intermediários; a ELT mantém o dado bruto no banco e concentra a transformação junto dos dados, mas cobra espaço e cuidado com desempenho.
+- **Processo também é entrega.** Uma branch por tarefa, revisão por outro integrante, commits descritivos e um quadro com dependências deixaram o trabalho de cada um rastreável. Os erros de processo (PR sem revisão, tarefa fechada sem entrega) apareceram cedo justamente por isso.
+
+## 7.3 O que cada integrante leva
+
+- **Davi de Souza Mello.** Trabalhou na função de diagnóstico (ETL-06), no modelo estrela (ETL-10), nas chaves e duplicatas (ETL-13), nas dimensões de tempo, gravidade, profissão e local do óbito (ETL-19 e ETL-22), na tabela fato (ETL-23), na carga bruta e nas etapas ELT-04 e ELT-05, e nas três análises (FIN-01). Leva a importância de definir o grão antes de qualquer tabela e de validar "ida e volta": ligar a fato às dimensões e recuperar exatamente a base limpa.
+- **Guilherme Calistrato.** Trabalhou na conexão com o PostgreSQL (ETL-02), no perfil de 2022 (ETL-08), no dicionário da fonte (ETL-11), em texto e encoding (ETL-14), no DDL e dicionário do DW (ETL-18), nas dimensões de localidade e via (ETL-21), no notebook ETL completo (ETL-26) e, na ELT, na primeira limpeza (ELT-03) e na tabela fato (ELT-07). Leva o cuidado com encoding e com as regras do banco (`CHECK`, chaves e tipos), e a experiência de reduzir o tempo de validação juntando as conferências numa passada só.
+- **Pedro Wellington.** Trabalhou na fonte e na extração (ETL-03 e ETL-05), no perfil de 2023 (ETL-09), nos nulos e categorias (ETL-16), na padronização de profissões (ETL-17), nas dimensões de perfil e transporte (ETL-20), na carga e na validação pós-carga (ETL-24 e ETL-25) e, na ELT, na validação cruzada (ELT-08) e no notebook ELT completo (ELT-09). Leva que nulo precisa de regra explícita e que uma validação precisa caber nos limites do ambiente, como na troca do `EXCEPT` pela soma de hashes.
+- **Samuel de Almeida.** Organizou o repositório e o quadro (ETL-01 e ETL-04), fez o perfil de 2021 (ETL-07), o comparativo entre anos (ETL-12), o tratamento de datas (ETL-15), o diagrama e o guia da ETL (ETL-27) e, na ELT, a preparação da fase (ELT-01), as dimensões B (ELT-06) e o comparativo ETL × ELT (ELT-10). Leva que organização e ordem das tarefas definem o ritmo do grupo, e que comparar os anos antes de transformar evita surpresas.
