@@ -87,3 +87,21 @@ A tabela resume as contribuições que aparecem nos notebooks e na documentaçã
 | Guilherme Calistrato (`@guicalistrato`) | Conexão ao PostgreSQL (ETL-02), perfil de 2022 (ETL-08), dicionário da fonte (ETL-11), texto e encoding (ETL-14), DDL e dicionário do DW (ETL-18), dimensões de localidade e via (ETL-21) e integração do notebook final (ETL-26). |
 | Pedro (`@PedroWellington`) | Fonte e extração (ETL-03 e ETL-05), perfil de 2023 (ETL-09), nulos e categorias (ETL-16), padronização de profissões (ETL-17), dimensões de perfil e transporte (ETL-20), carga no PostgreSQL (ETL-24) e validação pós-carga (ETL-25). |
 | Samuel de Almeida (`@safn007`) | Organização do repositório e do quadro (ETL-01 e ETL-04), perfil de 2021 (ETL-07), comparativo entre anos (ETL-12), tratamento de datas (ETL-15), diagrama do fluxo e guia de execução (ETL-27). |
+
+## Fluxo da ELT
+
+A ELT usa os mesmos 36 CSVs da ETL. O notebook [`notebooks/ELT.ipynb`](notebooks/ELT.ipynb) envia os arquivos brutos com `COPY` para `raw.pessoas`. A limpeza de tipos, textos, datas, nulos e profissões roda em SQL no schema `stg`. O PostgreSQL monta as oito dimensões e a tabela fato em `dw_elt`.
+
+![Fluxo da ELT: carga em raw, transformação em stg, modelo estrela em dw_elt e comparação com a ETL.](docs/diagramas/fluxo_elt.png)
+
+[Diagrama editável](docs/diagramas/fluxo_elt.drawio) · [Comparativo ETL × ELT (seção 5 do relatório)](docs/relatorio/relatorio.md#5-comparativo-etl--elt)
+
+### Como rodar a ELT
+
+1. Use o mesmo clone, ambiente Python, arquivos em `data/` e configuração de `DATABASE_URL` da seção **Como rodar a ETL** deste README. Na raiz do projeto, `python src/conexao.py` testa a conexão sem recarregar o banco.
+2. Para executar do zero, abra [`notebooks/ELT.ipynb`](notebooks/ELT.ipynb), escolha o kernel do ambiente virtual e use **Run All** em **um banco de teste**. A etapa inicial do notebook executa `DROP SCHEMA ... CASCADE` em `raw`, `stg` e `dw_elt` e recria essas camadas. No banco compartilhado, só faça a recarga se estiver combinada com a equipe.
+3. Ao terminar, confira as oito dimensões, as **806.977 linhas na fato** e os **15.793 óbitos**. Para apenas consultar o resultado já carregado, use `SELECT` com o schema explícito e não execute o notebook inteiro.
+
+### Comparar a ELT com a ETL
+
+A validação cruzada fica em [`notebooks/elt/08_validacao.ipynb`](notebooks/elt/08_validacao.ipynb), depois de as estrelas dos dois fluxos estarem no mesmo banco. Ela lê `public` (ETL) e `dw_elt` (ELT) e gera [`sql/validacao/elt_checks.sql`](sql/validacao/elt_checks.sql). As saídas salvas registram contagens iguais nas nove tabelas e nenhum registro divergente nas colunas projetadas pelo `EXCEPT` por tabela.
